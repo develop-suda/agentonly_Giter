@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git履歴アプリ - Giter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* shadcn/ui inspired styles */
+        :root {
+            --background: 0 0% 100%;
+            --foreground: 222.2 84% 4.9%;
+            --card: 0 0% 100%;
+            --card-foreground: 222.2 84% 4.9%;
+            --primary: 222.2 47.4% 11.2%;
+            --primary-foreground: 210 40% 98%;
+            --secondary: 210 40% 96.1%;
+            --secondary-foreground: 222.2 47.4% 11.2%;
+            --muted: 210 40% 96.1%;
+            --muted-foreground: 215.4 16.3% 46.9%;
+            --border: 214.3 31.8% 91.4%;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: 222.2 84% 4.9%;
+            --foreground: 210 40% 98%;
+            --card: 222.2 84% 4.9%;
+            --card-foreground: 210 40% 98%;
+        }
+
+        * {
+            border-color: hsl(var(--border));
+        }
+
+        body {
+            background-color: hsl(var(--background));
+            color: hsl(var(--foreground));
+        }
+
+        .card {
+            background-color: hsl(var(--card));
+            color: hsl(var(--card-foreground));
+            border-radius: var(--radius);
+            border: 1px solid hsl(var(--border));
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius);
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background-color: hsl(var(--primary));
+            color: hsl(var(--primary-foreground));
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+
+        .fab {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 3.5rem;
+            height: 3.5rem;
+            border-radius: 9999px;
+            background-color: hsl(var(--primary));
+            color: hsl(var(--primary-foreground));
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 50;
+        }
+
+        .fab:hover {
+            transform: scale(1.1);
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+        }
+
+        .dialog-overlay {
+            position: fixed;
+            inset: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .dialog-overlay.active {
+            display: flex;
+        }
+
+        .dialog {
+            background-color: hsl(var(--card));
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            max-width: 32rem;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+        }
+
+        .input {
+            width: 100%;
+            border-radius: var(--radius);
+            border: 1px solid hsl(var(--border));
+            padding: 0.5rem 0.75rem;
+            background-color: transparent;
+        }
+
+        .input:focus {
+            outline: none;
+            ring: 2px;
+            ring-color: hsl(var(--primary));
+        }
+
+        .textarea {
+            width: 100%;
+            border-radius: var(--radius);
+            border: 1px solid hsl(var(--border));
+            padding: 0.5rem 0.75rem;
+            background-color: transparent;
+            min-height: 100px;
+        }
+
+        .textarea:focus {
+            outline: none;
+            ring: 2px;
+            ring-color: hsl(var(--primary));
+        }
+
+        .loading {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid hsl(var(--primary));
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .commit-card {
+            transition: all 0.2s;
+        }
+
+        .commit-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200">
+        <div class="container mx-auto px-4 py-6">
+            <h1 class="text-3xl font-bold text-gray-900">🚀 Giter - Git履歴</h1>
+            <p class="text-gray-600 mt-2">develop-suda のGitHub履歴を表示</p>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-8">
+        <!-- Loading State -->
+        <div id="loading" class="flex items-center justify-center py-12">
+            <div class="loading"></div>
+            <span class="ml-3 text-gray-600">読み込み中...</span>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="hidden">
+            <div class="card p-6 bg-red-50 border-red-200">
+                <h3 class="text-red-900 font-semibold text-lg">エラーが発生しました</h3>
+                <p class="text-red-700 mt-2" id="error-message"></p>
+            </div>
+        </div>
+
+        <!-- Commits Grid -->
+        <div id="commits-container" class="hidden">
+            <div class="mb-6 flex items-center justify-between">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-900">コミット履歴</h2>
+                    <p class="text-gray-600 mt-1">全 <span id="total-commits" class="font-semibold text-primary">0</span> 件</p>
+                </div>
+            </div>
+
+            <div id="commits-list" class="grid gap-4">
+                <!-- Commits will be inserted here -->
+            </div>
+        </div>
+    </main>
+
+    <!-- FAB Button -->
+    <button class="fab" title="リフレッシュ" onclick="loadCommits()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+        </svg>
+    </button>
+
+    <script>
+        /**
+         * DOMContentLoadedイベント: HTMLの解析が完了し、DOM構造が利用可能になった時点で発火
+         * 画像やスタイルシートの読み込みを待たずに実行されるため、初期表示が速い
+         * ページ読み込み完了時に自動的にコミット履歴を取得する
+         */
+        window.addEventListener('DOMContentLoaded', () => {
+            loadCommits();
+        });
+
+        /**
+         * loadCommits - Git履歴をAPIから取得し、画面に表示する非同期関数
+         *
+         * 処理の流れ:
+         * 1. UIをリセット（ローディング表示）
+         * 2. /api/git-history エンドポイントからデータを取得
+         * 3. 取得したデータを新しい順にソート
+         * 4. 各コミットのカードを生成して表示
+         * 5. エラー時はエラーメッセージを表示
+         *
+         * 使用するDOM要素:
+         * - loading: ローディングインジケーター
+         * - error: エラーメッセージ表示エリア
+         * - container: コミット一覧コンテナ
+         * - commitsList: 個別のコミットカードを格納する要素
+         */
+        async function loadCommits() {
+            // DOM要素の取得
+            // getElementById()でHTML内の特定のid属性を持つ要素を取得
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const container = document.getElementById('commits-container');
+            const commitsList = document.getElementById('commits-list');
+
+            // UIをリセット（初期状態に戻す）
+            // ローディングを表示し、エラーとコンテンツを非表示にする
+            loading.classList.remove('hidden');  // ローディング表示
+            error.classList.add('hidden');       // エラーを非表示
+            container.classList.add('hidden');   // コンテンツを非表示
+            commitsList.innerHTML = '';          // 既存のコミットカードをすべて削除
+
+            try {
+                // Fetch APIを使用してバックエンドにHTTP GETリクエストを送信
+                // await: 非同期処理の完了を待つ（Promiseがresolveされるまで待機）
+                const response = await fetch('/api/git-history');
+
+                // HTTPレスポンスのステータスコードをチェック
+                // response.ok は status が 200-299 の範囲内の場合に true
+                if (!response.ok) {
+                    // ステータスコードが200番台以外の場合、エラーをスロー
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // レスポンスボディをJSON形式でパース
+                // await: JSONパース処理の完了を待つ
+                const commits = await response.json();
+
+                // ローディングを非表示にし、コンテンツを表示
+                loading.classList.add('hidden');
+                container.classList.remove('hidden');
+
+                // 総コミット数を画面に表示
+                // textContent: XSS攻撃を防ぐため、テキストのみを設定（HTMLタグは無効化）
+                document.getElementById('total-commits').textContent = commits.length;
+
+                // コミットを時間の新しい順にソート
+                // sort()は配列を破壊的に変更（元の配列が書き換えられる）
+                // 比較関数: 負の値を返すとaが前、正の値を返すとbが前に配置
+                commits.sort((a, b) => new Date(b.commit_time) - new Date(a.commit_time));
+
+                // 各コミットに対してカードを生成し、DOMに追加
+                // forEach: 配列の各要素に対して関数を実行
+                commits.forEach(commit => {
+                    const card = createCommitCard(commit);  // コミットカードのDOM要素を生成
+                    commitsList.appendChild(card);          // DOMツリーに追加（画面に表示される）
+                });
+
+            } catch (err) {
+                // エラーが発生した場合の処理
+                // try ブロック内で throw されたエラー、またはネットワークエラーなどをキャッチ
+                console.error('Error loading commits:', err);  // コンソールにエラーログを出力
+                loading.classList.add('hidden');               // ローディングを非表示
+                error.classList.remove('hidden');              // エラーメッセージを表示
+                document.getElementById('error-message').textContent = err.message;  // エラー内容を表示
+            }
+        }
+
+        /**
+         * createCommitCard - 個別のコミット情報からHTMLカード要素を生成する関数
+         *
+         * @param {Object} commit - コミット情報オブジェクト
+         * @param {string} commit.repository_name - リポジトリ名
+         * @param {string} commit.commit_sha - コミットハッシュ（短縮形）
+         * @param {string} commit.commit_message - コミットメッセージ
+         * @param {string} commit.commit_time - コミット日時（ISO 8601形式）
+         * @param {string} commit.commit_url - GitHubのコミットページURL
+         *
+         * @returns {HTMLDivElement} 生成されたカード要素
+         *
+         * 処理:
+         * 1. 日時を日本語ロケールでフォーマット
+         * 2. カード用のdiv要素を作成
+         * 3. テンプレートリテラルでHTMLを生成
+         * 4. XSS対策としてescapeHtml()関数でエスケープ
+         */
+        function createCommitCard(commit) {
+            // 新しいdiv要素を作成
+            const card = document.createElement('div');
+            // Tailwind CSSのクラスを設定（スタイリング）
+            card.className = 'card p-5 commit-card cursor-pointer';
+
+            // ISO 8601形式の日時文字列をDateオブジェクトに変換
+            const date = new Date(commit.commit_time);
+
+            // 日本語ロケールで日時をフォーマット
+            // toLocaleString(): ブラウザのロケール設定に基づいて日時文字列を生成
+            const formattedDate = date.toLocaleString('ja-JP', {
+                year: 'numeric',    // 年を数値で表示
+                month: '2-digit',   // 月を2桁で表示（01-12）
+                day: '2-digit',     // 日を2桁で表示（01-31）
+                hour: '2-digit',    // 時を2桁で表示（00-23）
+                minute: '2-digit'   // 分を2桁で表示（00-59）
+            });
+
+            // テンプレートリテラルでHTMLを生成
+            // バッククォート(``)内で${変数}を使用すると値が埋め込まれる
+            // escapeHtml()でXSS攻撃を防ぐ（ユーザー入力をそのまま表示しない）
+            card.innerHTML = `
+                <div class="flex items-start justify-between gap-4">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-3 mb-2">
+                            <!-- リポジトリ名のバッジ -->
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                ${escapeHtml(commit.repository_name)}
+                            </span>
+                            <!-- コミットハッシュ（短縮形）のバッジ -->
+                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-mono bg-gray-100 text-gray-700">
+                                ${escapeHtml(commit.commit_sha)}
+                            </span>
+                        </div>
+                        <!-- コミットメッセージ（メインテキスト） -->
+                        <h3 class="text-base font-semibold text-gray-900 mb-2 truncate">
+                            ${escapeHtml(commit.commit_message)}
+                        </h3>
+                        <div class="flex items-center gap-4 text-sm text-gray-600">
+                            <!-- 時計アイコンとコミット日時 -->
+                            <span class="flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                                ${formattedDate}
+                            </span>
+                        </div>
+                    </div>
+                    <!-- GitHubへのリンクボタン -->
+                    <!-- target="_blank": 新しいタブで開く -->
+                    <!-- rel="noopener noreferrer": セキュリティ対策（window.openerアクセスを防ぐ） -->
+                    <a href="${escapeHtml(commit.commit_url)}" target="_blank" rel="noopener noreferrer"
+                       class="btn btn-primary px-4 py-2 text-sm flex items-center gap-2">
+                        GitHubで見る
+                        <!-- 外部リンクアイコン -->
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                            <polyline points="15 3 21 3 21 9"/>
+                            <line x1="10" y1="14" x2="21" y2="3"/>
+                        </svg>
+                    </a>
+                </div>
+            `;
+
+            // 生成したカード要素を返す
+            return card;
+        }
+
+        /**
+         * escapeHtml - XSS攻撃を防ぐためにHTMLの特殊文字をエスケープする関数
+         *
+         * @param {string} text - エスケープする文字列
+         * @returns {string} エスケープされた文字列
+         *
+         * 処理内容:
+         * - HTMLで特別な意味を持つ文字をHTMLエンティティに変換
+         * - これにより、ユーザー入力にスクリプトタグなどが含まれていても実行されない
+         *
+         * 変換対象文字:
+         * - & → &amp;   (アンパサンド: 他のエンティティの開始文字なので最初に変換)
+         * - < → &lt;    (小なり: タグの開始を示す)
+         * - > → &gt;    (大なり: タグの終了を示す)
+         * - " → &quot;  (ダブルクォート: 属性値の区切り)
+         * - ' → &#039;  (シングルクォート: 属性値の区切り)
+         *
+         * 例:
+         * input:  '<script>alert("XSS")</script>'
+         * output: '&lt;script&gt;alert(&quot;XSS&quot;)&lt;/script&gt;'
+         */
+        function escapeHtml(text) {
+            // エスケープマップ: 特殊文字 → HTMLエンティティ
+            const map = {
+                '&': '&amp;',   // アンパサンド
+                '<': '&lt;',    // 小なり記号
+                '>': '&gt;',    // 大なり記号
+                '"': '&quot;',  // ダブルクォート
+                "'": '&#039;'   // シングルクォート
+            };
+
+            // 正規表現で特殊文字を検索し、マップの値で置換
+            // /[&<>"']/g: 5つの特殊文字のいずれかにマッチ（gフラグで全置換）
+            // m => map[m]: マッチした文字をキーとしてマップから対応するエンティティを取得
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+services:
+  giter-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: giter-dev
+    ports:
+      - "8080:8080"
+    environment:
+      - TZ=Asia/Tokyo
+      - GIN_MODE=debug
+    volumes:
+      # ソースコードをマウント（ホットリロード用）
+      - .:/app
+      # Go modulesキャッシュをボリュームに保存
+      - go-modules:/go/pkg/mod
+    restart: unless-stopped
+    networks:
+      - giter-network
+
+volumes:
+  go-modules:
+
+networks:
+  giter-network:
+    driver: bridge

@@ -1,0 +1,21 @@
+services:
+  giter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: giter-app
+    ports:
+      - "8080:8080"
+    environment:
+      - TZ=Asia/Tokyo
+    restart: unless-stopped
+    # 開発時のホットリロード用（オプション）
+    # volumes:
+    #   - ./templates:/root/templates
+    #   - ./static:/root/static
+    networks:
+      - giter-network
+
+networks:
+  giter-network:
+    driver: bridge
