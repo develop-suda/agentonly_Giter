@@ -184,8 +184,36 @@
         <!-- Error State -->
         <div id="error" class="hidden">
             <div class="card p-6 bg-red-50 border-red-200">
-                <h3 class="text-red-900 font-semibold text-lg">エラーが発生しました</h3>
-                <p class="text-red-700 mt-2" id="error-message"></p>
+                <div class="flex items-start gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-600 flex-shrink-0 mt-0.5">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    <div class="flex-1">
+                        <h3 class="text-red-900 font-semibold text-lg mb-2">エラーが発生しました</h3>
+                        <p class="text-red-700 mb-3" id="error-message"></p>
+                        <div id="error-details" class="hidden mt-4 p-4 bg-red-100 border border-red-300 rounded">
+                            <p class="text-sm text-red-800 font-semibold mb-2">💡 解決方法:</p>
+                            <ul class="text-sm text-red-700 space-y-1 list-disc list-inside">
+                                <li>GitHub APIのレート制限（60リクエスト/時間）に達しています</li>
+                                <li>しばらく時間をおいてから再度お試しください</li>
+                                <li>頻繁にアクセスする場合は、GitHub Personal Access Tokenの設定をご検討ください</li>
+                            </ul>
+                            <a href="https://docs.github.com/ja/rest/overview/resources-in-the-rest-api#rate-limiting"
+                               target="_blank"
+                               rel="noopener noreferrer"
+                               class="inline-flex items-center gap-2 mt-3 text-sm text-red-900 font-medium hover:underline">
+                                詳細はこちら
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                    <polyline points="15 3 21 3 21 9"/>
+                                    <line x1="10" y1="14" x2="21" y2="3"/>
+                                </svg>
+                            </a>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -260,8 +288,22 @@
                 // HTTPレスポンスのステータスコードをチェック
                 // response.ok は status が 200-299 の範囲内の場合に true
                 if (!response.ok) {
-                    // ステータスコードが200番台以外の場合、エラーをスロー
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    // エラーレスポンスの詳細を取得
+                    let errorMessage = `HTTPエラー: ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        if (errorData.error) {
+                            errorMessage = errorData.error;
+                        }
+                    } catch (e) {
+                        // JSONパース失敗時はデフォルトメッセージを使用
+                    }
+                    // カスタムエラーをスロー
+                    const error = new Error(errorMessage);
+                    error.isRateLimitError = errorMessage.includes('rate limit') ||
+                                            errorMessage.includes('403 Forbidden') ||
+                                            errorMessage.includes('API rate limit exceeded');
+                    throw error;
                 }
 
                 // レスポンスボディをJSON形式でパース
@@ -294,7 +336,17 @@
                 console.error('Error loading commits:', err);  // コンソールにエラーログを出力
                 loading.classList.add('hidden');               // ローディングを非表示
                 error.classList.remove('hidden');              // エラーメッセージを表示
-                document.getElementById('error-message').textContent = err.message;  // エラー内容を表示
+
+                // エラーメッセージを表示
+                document.getElementById('error-message').textContent = err.message;
+
+                // レート制限エラーの場合は詳細情報を表示
+                const errorDetails = document.getElementById('error-details');
+                if (err.isRateLimitError) {
+                    errorDetails.classList.remove('hidden');
+                } else {
+                    errorDetails.classList.add('hidden');
+                }
             }
         }
 
