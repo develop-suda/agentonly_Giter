@@ -21,6 +21,9 @@ go.work
 giter
 *.log
 
+# Log directory
+log/
+
 # Air (hot reload tool)
 tmp/
 build-errors.log

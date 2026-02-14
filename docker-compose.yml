@@ -9,10 +9,14 @@ services:
     environment:
       - TZ=Asia/Tokyo
     restart: unless-stopped
+    # ログファイルを永続化するためのボリュームマウント
+    volumes:
+      - ./log:/root/log
     # 開発時のホットリロード用（オプション）
     # volumes:
     #   - ./templates:/root/templates
     #   - ./static:/root/static
+    #   - ./log:/root/log
     networks:
       - giter-network
 

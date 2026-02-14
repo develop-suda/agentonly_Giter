@@ -11,6 +11,7 @@ services:
       - GIN_MODE=debug
     volumes:
       # ソースコードをマウント（ホットリロード用）
+      # ログディレクトリ（log/）も自動的にホスト側に保存される
       - .:/app
       # Go modulesキャッシュをボリュームに保存
       - go-modules:/go/pkg/mod

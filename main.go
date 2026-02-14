@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 /*
@@ -64,6 +67,62 @@ const (
 )
 
 /*
+setupLogger はログディレクトリとファイルを作成し、zerologを設定する
+ログは以下の構造で保存される：
+  log/YYYYMM/YYYYMMDD/app.log
+例：log/202602/20260214/app.log
+
+戻り値:
+  *os.File - ログファイルのポインタ（main関数終了時にクローズするため）
+  error - エラーが発生した場合のエラーオブジェクト
+*/
+func setupLogger() (*os.File, error) {
+	// 現在の日時を取得
+	now := time.Now()
+	yearMonth := now.Format("200601")   // YYYYMM形式
+	yearMonthDay := now.Format("20060102") // YYYYMMDD形式
+
+	// ログディレクトリのパスを構築
+	logDir := fmt.Sprintf("log/%s/%s", yearMonth, yearMonthDay)
+
+	// ディレクトリを作成（0755は読み取り・実行は全ユーザー、書き込みは所有者のみ）
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	// ログファイルのパスを構築
+	logFilePath := fmt.Sprintf("%s/app.log", logDir)
+
+	// ログファイルを開く（追記モード、存在しない場合は作成）
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open log file: %w", err)
+	}
+
+	// コンソール出力用のWriter（人間が読みやすい形式）
+	consoleWriter := zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}
+
+	// ファイル出力とコンソール出力の両方に書き込む
+	multi := zerolog.MultiLevelWriter(consoleWriter, logFile)
+	log.Logger = log.Output(multi)
+
+	// ログレベルを設定（環境変数から取得、デフォルトはinfo）
+	logLevel := os.Getenv("LOG_LEVEL")
+	switch logLevel {
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "warn":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "error":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+
+	return logFile, nil
+}
+
+/*
 main はアプリケーションのエントリーポイント
 Ginフレームワークを使用してWebサーバーを起動し、以下の機能を提供する：
 - CORS対応（クロスオリジンリクエストを許可）
@@ -72,6 +131,21 @@ Ginフレームワークを使用してWebサーバーを起動し、以下の�
 - REST APIエンドポイント
 */
 func main() {
+	/*
+		zerologの初期化とログファイルの設定
+		ログはコンソールとファイルの両方に出力される
+	*/
+	logFile, err := setupLogger()
+	if err != nil {
+		// ログ設定に失敗した場合、標準エラー出力に出力して終了
+		fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
+		os.Exit(1)
+	}
+	// main関数終了時にログファイルをクローズ
+	defer logFile.Close()
+
+	log.Info().Msg("Starting application initialization")
+
 	/*
 		gin.Default()はロガーとリカバリーミドルウェアが組み込まれたGinエンジンを作成
 		リカバリーミドルウェアはpanicを検知し、500エラーを返す
@@ -125,13 +199,15 @@ func main() {
 	r.GET("/api/git-history", getGitHistory)
 
 	/* サーバー起動メッセージ */
-	fmt.Println("Server starting on :8080")
+	log.Info().Str("port", "8080").Msg("Server starting")
 
 	/*
 		Webサーバーを起動し、ポート8080でリクエストを待ち受ける
 		この関数はブロッキングで、サーバーが停止するまで戻らない
 	*/
-	r.Run(":8080")
+	if err := r.Run(":8080"); err != nil {
+		log.Fatal().Err(err).Msg("Failed to start server")
+	}
 }
 
 /*
@@ -149,6 +225,8 @@ getGitHistory はGit履歴を取得するAPIハンドラー
   失敗時: 500 Internal Server Error, {"error": "エラーメッセージ"}
 */
 func getGitHistory(c *gin.Context) {
+	log.Info().Msg("Fetching git history")
+
 	/*
 		fetchRepositories()を呼び出し、対象ユーザーの全公開リポジトリを取得
 		戻り値: repos（リポジトリのスライス）, err（エラー）
@@ -159,9 +237,12 @@ func getGitHistory(c *gin.Context) {
 			エラーが発生した場合、500エラーとエラーメッセージをJSON形式で返す
 			gin.Hは map[string]interface{} のエイリアスで、JSON生成に使用
 		*/
+		log.Error().Err(err).Msg("Failed to fetch repositories")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	log.Info().Int("count", len(repos)).Msg("Repositories fetched successfully")
 
 	/*
 		allCommitsは全リポジトリのコミット履歴を格納するスライス
@@ -181,9 +262,18 @@ func getGitHistory(c *gin.Context) {
 				個別リポジトリのエラーは全体の処理を停止せず、ログ出力のみ
 				これにより一部のリポジトリが取得できなくても他のリポジトリは表示される
 			*/
-			fmt.Printf("Error fetching commits for %s: %v\n", repo.Name, err)
+			log.Warn().
+				Err(err).
+				Str("repository", repo.Name).
+				Str("full_name", repo.FullName).
+				Msg("Failed to fetch commits for repository")
 			continue /* 次のリポジトリの処理に進む */
 		}
+
+		log.Debug().
+			Str("repository", repo.Name).
+			Int("commit_count", len(commits)).
+			Msg("Commits fetched for repository")
 
 		/* 取得したコミットをCommitHistory形式に変換してスライスに追加 */
 		for _, commit := range commits {
@@ -201,6 +291,7 @@ func getGitHistory(c *gin.Context) {
 		全コミット履歴をJSON形式でレスポンスとして返す
 		Ginが自動的にContent-Type: application/jsonヘッダーを設定
 	*/
+	log.Info().Int("total_commits", len(allCommits)).Msg("Returning git history")
 	c.JSON(http.StatusOK, allCommits)
 }
 
@@ -225,6 +316,11 @@ func fetchRepositories() ([]Repository, error) {
 		  - per_page=100: 1ページあたり100件（APIの最大値）
 	*/
 	url := fmt.Sprintf("%s/users/%s/repos?type=public&per_page=100", githubAPIBase, username)
+
+	log.Debug().
+		Str("url", url).
+		Str("username", username).
+		Msg("Fetching repositories from GitHub API")
 
 	/*
 		HTTPリクエストを作成
@@ -267,6 +363,11 @@ func fetchRepositories() ([]Repository, error) {
 		/* エラー詳細をレスポンスボディから読み取る */
 		body, _ := io.ReadAll(resp.Body)
 		/* ステータスコードとボディを含むエラーメッセージを返す */
+		log.Error().
+			Int("status_code", resp.StatusCode).
+			Str("status", resp.Status).
+			Str("response_body", string(body)).
+			Msg("GitHub API returned non-OK status")
 		return nil, fmt.Errorf("GitHub API error: %s - %s", resp.Status, string(body))
 	}
 
@@ -277,10 +378,12 @@ func fetchRepositories() ([]Repository, error) {
 	*/
 	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
 		/* JSONパースエラー（APIレスポンス形式が期待と異なる場合） */
+		log.Error().Err(err).Msg("Failed to decode repositories JSON response")
 		return nil, err
 	}
 
 	/* 取得したリポジトリ一覧を返す */
+	log.Info().Int("repository_count", len(repos)).Msg("Successfully fetched repositories")
 	return repos, nil
 }
 
@@ -310,6 +413,11 @@ func fetchCommits(repoFullName string) ([]Commit, error) {
 		  - per_page=100: 1ページあたり100件（APIの最大値）
 	*/
 	url := fmt.Sprintf("%s/repos/%s/commits?per_page=100", githubAPIBase, repoFullName)
+
+	log.Debug().
+		Str("url", url).
+		Str("repository", repoFullName).
+		Msg("Fetching commits from GitHub API")
 
 	/*
 		HTTPリクエストを作成
@@ -356,6 +464,12 @@ func fetchCommits(repoFullName string) ([]Commit, error) {
 		/* エラー詳細をレスポンスボディから読み取る */
 		body, _ := io.ReadAll(resp.Body)
 		/* ステータスコードとボディを含むエラーメッセージを返す */
+		log.Error().
+			Int("status_code", resp.StatusCode).
+			Str("status", resp.Status).
+			Str("repository", repoFullName).
+			Str("response_body", string(body)).
+			Msg("GitHub API returned non-OK status for commits")
 		return nil, fmt.Errorf("GitHub API error: %s - %s", resp.Status, string(body))
 	}
 
@@ -366,9 +480,17 @@ func fetchCommits(repoFullName string) ([]Commit, error) {
 	*/
 	if err := json.NewDecoder(resp.Body).Decode(&commits); err != nil {
 		/* JSONパースエラー（APIレスポンス形式が期待と異なる場合） */
+		log.Error().
+			Err(err).
+			Str("repository", repoFullName).
+			Msg("Failed to decode commits JSON response")
 		return nil, err
 	}
 
 	/* 取得したコミット一覧を返す（新しい順にソート済み） */
+	log.Debug().
+		Str("repository", repoFullName).
+		Int("commit_count", len(commits)).
+		Msg("Successfully fetched commits")
 	return commits, nil
 }

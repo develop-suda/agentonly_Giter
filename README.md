@@ -142,7 +142,11 @@ http://localhost:8080
 ├── .air.toml                # Airホットリロード設定
 ├── templates/
 │   └── index.html           # フロントエンドHTML（Tailwind CSS + shadcn/ui）
-└── static/                  # 静的ファイル用ディレクトリ
+├── static/                  # 静的ファイル用ディレクトリ
+└── log/                     # ログファイル出力先（自動生成）
+    └── YYYYMM/
+        └── YYYYMMDD/
+            └── app.log
 ```
 
 ## 🎨 機能
@@ -168,6 +172,7 @@ http://localhost:8080
 - **言語**: Go 1.21+
 - **フレームワーク**: Gin
 - **API**: GitHub REST API v3
+- **ログライブラリ**: zerolog
 
 ### フロントエンド
 - **CSS**: Tailwind CSS（CDN版）
@@ -178,6 +183,46 @@ http://localhost:8080
 - **コンテナ化**: Docker
 - **オーケストレーション**: Docker Compose
 - **ホットリロード**: Air（開発環境）
+
+## 📊 ログ機能
+
+アプリケーションは構造化ログを出力します。
+
+### ログの保存先
+
+ログは以下の階層構造で保存されます：
+
+```
+log/
+└── YYYYMM/
+    └── YYYYMMDD/
+        └── app.log
+```
+
+例：`log/202602/20260214/app.log`
+
+### ログレベル
+
+環境変数 `LOG_LEVEL` で設定可能：
+- `debug`: デバッグ情報を含む詳細なログ
+- `info`: 通常の動作情報（デフォルト）
+- `warn`: 警告メッセージ
+- `error`: エラーメッセージのみ
+
+docker-compose.ymlで設定例：
+```yaml
+environment:
+  - TZ=Asia/Tokyo
+  - LOG_LEVEL=debug
+```
+
+### ログの内容
+
+- アプリケーションの起動/終了
+- APIリクエストの処理状況
+- GitHub API呼び出しの詳細
+- エラー発生時の詳細情報
+- リポジトリとコミットの取得状況
 
 ## 📝 API エンドポイント
 
